@@ -28,15 +28,17 @@ Station = Base.classes.station
 Session = sessionmaker(bind=engine)
 
 #################################################
-# Retrieve last date and 1 year from the last date as first date 
+# Retrieve beginning date, last date and 1 year from the last date as first date 
 #################################################
 session = Session()
     
 # Retrieve the last date 
 last_date = session.query(Measurement.date).order_by(Measurement.date.desc()).first()
-    
+begin_date = session.query(Measurement.date).order_by(Measurement.date).first()    
+
 # Convert last date to String
 last_date = "%s" %(last_date)
+begin_date = "%s" %(begin_date)
 
 # Calculate the date 1 year ago
 first_date = dparser.parse(last_date, fuzzy=True) - dt.timedelta(days=365)
@@ -75,10 +77,13 @@ def welcome():
         f"<p style='color:{font_color}; background-color:{bkg_color}'>/api/v1.0/tobs</p>"
         f"<p>Query for the dates and temperature observations from a year from the last data point.</p>"
 
-        f"<p style='color:{font_color}; background-color:{bkg_color}'>/api/v1.0/start/end</p>"
+        f"<p><div style='color:{font_color}; background-color:{bkg_color}'>/api/v1.0/start/end</div></p>"
+        f"<p>Date Format: <b>yyyy-mm-dd</b></p>"
+        f"<p>Dataset first date: {begin_date}  Dataset last date: {last_date}</p>"
         f"<p>Return a list of the minimum temperature, the average temperature, and the max temperature for a given start or start-end range.</p>"
         f"<p>When given the start only, calculate the above for all dates greater than and equal to the start date.</p>"
         f"<p>When given the start and the end date, calculate the above for dates between the start and end date inclusive.</p>"
+        f"<p><u>Please make sure the start date is earlier than the end date</u></p>"
     )
 
 @app.route("/api/v1.0/precipitation")
@@ -156,7 +161,6 @@ def timeperiod(start, end):
     """When given the start and the end date, calculate the TMIN, TAVG, and TMAX for dates between the start and end date inclusive."""
     
     session = Session()
-    print(f"start: {start}  end: {end}")
 
     try:
         if (end != None):
@@ -168,10 +172,11 @@ def timeperiod(start, end):
             result = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
                         filter(Measurement.date >= start).all()
 
-        #if (result[0][0] == None):
-        #    return f"Date range is wrong. Please make sure end date is later than start date"
+        # No result found. Something is wrong with the input date(s)
+        if (result[0][0] == None):
+            return f"No result. Please go to the home page to check the usage of this API"
 
-        # Create a list of dictionaries to keep the calculation result
+        # Create a dictionary to keep the calculation result
         temp_dict = {}
         temp_dict['TMIN'] = result[0][0]
         temp_dict['TAVG'] = result[0][1]
@@ -179,8 +184,8 @@ def timeperiod(start, end):
         
         return jsonify(temp_dict)
     except:
-        return f"Please check the format of date(s) entered. Please use the format of \
-                <div style='font-weight:bold; text-decoration:underline'>yyyy-mm-dd</div>"
+        # Depending on database behavior, program can reach here when date(s) format is wrong
+        return f"Error! Please go to the home page to check the usage of this API"
     finally:
         session.close()
 
