@@ -24,169 +24,165 @@ Base.prepare(engine, reflect=True)
 Measurement = Base.classes.measurement
 Station = Base.classes.station
 
-# Create our session (link) from Python to the DB
-#session = Session(engine)
+# Create a global session factory from Python to the DB
 Session = sessionmaker(bind=engine)
+
+#################################################
+# Retrieve last date and 1 year from the last date as first date 
+#################################################
+session = Session()
+    
+# Retrieve the last date 
+last_date = session.query(Measurement.date).order_by(Measurement.date.desc()).first()
+    
+# Convert last date to String
+last_date = "%s" %(last_date)
+
+# Calculate the date 1 year ago
+first_date = dparser.parse(last_date, fuzzy=True) - dt.timedelta(days=365)
+
+# Convert from datatime type to string in the format of yyyy-mm-dd
+first_date = first_date.strftime('%Y-%m-%d')
+
+session.close()
 
 #################################################
 # Flask Setup
 #################################################
 app = Flask(__name__)
 
-
 #################################################
 # Flask Routes
 #################################################
-
 @app.route("/")
 def welcome():
     """List all available api routes."""
+    
+    font_color = '#045FB4'
+    bkg_color = '#E6E6E6'
+
     return (
-        f"Available Routes:<br/>"
-        f"/api/v1.0/precipitation<br/>"
-        f"/api/v1.0/passengers"
+        f"<p style='font-size:1.5em; color:{font_color}; text-align:center'>Welcome to Climate API</p><br/>"
+
+        f"<p style='font-size:1.5em;'>Usage:</p>"
+
+        f"<p style='color:{font_color}; background-color:{bkg_color}'>/api/v1.0/precipitation</p>"
+        f"<p>Retrieve the last 12 months of precipitation data from the last date point.</p>"
+
+        f"<p style='color:{font_color}; background-color:{bkg_color}'>/api/v1.0/stations</p>"
+        f"<p>Retrieve a list of stations.</p>"
+
+        f"<p style='color:{font_color}; background-color:{bkg_color}'>/api/v1.0/tobs</p>"
+        f"<p>Query for the dates and temperature observations from a year from the last data point.</p>"
+
+        f"<p style='color:{font_color}; background-color:{bkg_color}'>/api/v1.0/start/end</p>"
+        f"<p>Return a list of the minimum temperature, the average temperature, and the max temperature for a given start or start-end range.</p>"
+        f"<p>When given the start only, calculate the above for all dates greater than and equal to the start date.</p>"
+        f"<p>When given the start and the end date, calculate the above for dates between the start and end date inclusive.</p>"
     )
-
-
-@app.route("/api/v1.0/names")
-#def names():
-#    """Return a list of all passenger names"""
-    # Query all passengers
-#    results = session.query(Passenger.name).all()
-
-    # Convert list of tuples into normal list
-#    all_names = list(np.ravel(results))
-
-#    return jsonify(all_names)
-
 
 @app.route("/api/v1.0/precipitation")
 def precipitation():
-    """Return a list of passenger data including the name, age, and sex of each passenger"""
+    """Retrieve the last 12 months of precipitation data from the last date point"""
 
-    try:
-        session = Session()
+    session = Session()
 
-        # Find the last data point 
-        last_date = session.query(Measurement.date).order_by(Measurement.date.desc()).first()
+    # Query to retrieve the data and precipitation scores
+    result = session.query(Measurement.date, Measurement.prcp).\
+            filter(Measurement.date >= first_date).\
+            filter(Measurement.date <= last_date).\
+            order_by(Measurement.date.desc()).all()
 
-        # Convert last date to String
-        last_date = "%s" %(last_date)
+    # Create a dictionary from the result data with date as key and precipitation as value
+    all_precipitation = []
+    for precipitation in result:
+        precipitation_dict = {}
+        precipitation_dict[precipitation.date] = precipitation.prcp
+        all_precipitation.append(precipitation_dict)
 
-        # Calculate the date 1 year ago
-        first_date = dparser.parse(last_date, fuzzy=True) - dt.timedelta(days=365)
+    session.close()
 
-        # Convert from datatime type to string in the format of yyyy-mm-dd
-        first_date = first_date.strftime('%Y-%m-%d')
-        
-        # Perform a query to retrieve the data and precipitation scores
-        result = session.query(Measurement.date, Measurement.prcp).\
-                filter(Measurement.date >= first_date).\
-                filter(Measurement.date <= last_date).\
-                order_by(Measurement.date).all()
-
-        # Create a dictionary from the row data and append to a list of all_passengers
-        all_precipitation = []
-        for precipitation in result:
-            precipitation_dict = {}
-            #precipitation_dict["date"] = precipitation.date
-            precipitation_dict[precipitation.date] = precipitation.prcp
-            all_precipitation.append(precipitation_dict)
-
-        return jsonify(all_precipitation)
-    finally:
-        session.close()
-        
-# Return a JSON list of stations from the dataset.
+    return jsonify(all_precipitation)
+     
 @app.route("/api/v1.0/stations")
 def stations():
     """Return a list of stations"""
 
-    try:
-        session = Session()
-        result1 = session.query(Station.id, Station.name).all()
-        all_stations = []
-        for station in result1:
-            station_dict = {}
-            station_dict['ID'] = station.id
-            station_dict['Station Name'] = station.name
-            all_stations.append(station_dict)
-            
-        return jsonify(all_stations)
-    finally:
-        session.close()
+    session = Session()
+    
+    # Query to retrieve all station id and names
+    result = session.query(Station.id, Station.name).all()
 
-# Return a JSON list of stations from the dataset.
+    # Create a list of dictionaries to keep the result id and names
+    all_stations = []
+    for station in result:
+        station_dict = {}
+        station_dict['ID'] = station.id
+        station_dict['Station Name'] = station.name
+        all_stations.append(station_dict)
+
+    session.close()       
+    return jsonify(all_stations)
+        
 @app.route("/api/v1.0/tobs")
 def tobs():
     """Return a list of temperature from previous year"""
+    
+    session = Session()
 
-    try:
-        session = Session()
+    # Query to retrieve temperature from 1 year 
+    result = session.query(Measurement.tobs, Measurement.date).\
+                filter(Measurement.date >= first_date).\
+                filter(Measurement.date <= last_date).\
+                order_by(Measurement.date.desc()).all()
+                #filter(Measurement.station == most_active_stat).all()
 
-        # Find the last data point 
-        last_date1 = session.query(Measurement.date).order_by(Measurement.date.desc()).first()
-
-        # Convert last date to String
-        last_date1 = "%s" %(last_date1)
-
-        # Calculate the date 1 year ago
-        first_date1 = dparser.parse(last_date1, fuzzy=True) - dt.timedelta(days=365)
-
-        # Convert from datatime type to string in the format of yyyy-mm-dd
-        first_date1 = first_date1.strftime('%Y-%m-%d')
-
-        result_tobs = session.query(Measurement.tobs).\
-        filter(Measurement.date >= first_date1).\
-        filter(Measurement.date <= last_date1).all()
-        #filter(Measurement.station == most_active_stat).all()
-
-        all_tobs = []
-        for tobs in result_tobs:
-            tob_dict = {}
-            tob_dict['Temperature'] = tobs.tobs
-            
-            all_tobs.append(tob_dict)
-            
-        return jsonify(all_tobs)
-    finally:
-        session.close()
-
-# Return a JSON list of stations from the dataset.
+    # Create a list of dictionaries to keep the result dates and temperatures
+    all_tobs = []
+    for tobs in result:
+        tob_dict = {}
+        tob_dict['Date'] = tobs.date
+        tob_dict['Temperature'] = tobs.tobs   
+        all_tobs.append(tob_dict)
+    
+    session.close()        
+    return jsonify(all_tobs)
+        
 @app.route("/api/v1.0/<start>", defaults={'end': None})
 @app.route("/api/v1.0/<start>/<end>")
 def timeperiod(start, end):
-    """Return a list of stations"""
+    """Return a JSON list of the minimum temperature, the average temperature, and the max temperature for a given start or start-end range."""
+    """When given the start only, calculate TMIN, TAVG, and TMAX for all dates greater than and equal to the start date."""
+    """When given the start and the end date, calculate the TMIN, TAVG, and TMAX for dates between the start and end date inclusive."""
+    
     session = Session()
+    print(f"start: {start}  end: {end}")
 
     try:
-        
         if (end != None):
-            result3 = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
+            # If both start date and end date are given
+            result = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
                         filter(Measurement.date >= start).filter(Measurement.date <= end).all()
         else:
-            result3 = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
+            # Only start date is given
+            result = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
                         filter(Measurement.date >= start).all()
 
-        print(result3)
-        if (result3[0][0] == None):
-            return f"wrong date range"
+        #if (result[0][0] == None):
+        #    return f"Date range is wrong. Please make sure end date is later than start date"
 
-        all_prcp = []    
-        for prcp in result3:
-            prcp_dict = {}
-            prcp_dict['TMIN'] = prcp[0]
-            prcp_dict['TAVG'] = prcp[1]
-            prcp_dict['TMAX'] = prcp[2]
-            all_prcp.append(prcp_dict)
+        # Create a list of dictionaries to keep the calculation result
+        temp_dict = {}
+        temp_dict['TMIN'] = result[0][0]
+        temp_dict['TAVG'] = result[0][1]
+        temp_dict['TMAX'] = result[0][2]
         
-        return jsonify(all_prcp)
+        return jsonify(temp_dict)
     except:
-        return f"date wrong format"
+        return f"Please check the format of date(s) entered. Please use the format of \
+                <div style='font-weight:bold; text-decoration:underline'>yyyy-mm-dd</div>"
     finally:
         session.close()
-
-    
 
 if __name__ == '__main__':
     app.run(debug=True)
