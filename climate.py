@@ -99,11 +99,9 @@ def precipitation():
             order_by(Measurement.date.desc()).all()
 
     # Create a dictionary from the result data with date as key and precipitation as value
-    all_precipitation = []
+    all_precipitation = {}
     for precipitation in result:
-        precipitation_dict = {}
-        precipitation_dict[precipitation.date] = precipitation.prcp
-        all_precipitation.append(precipitation_dict)
+        all_precipitation[precipitation.date] = precipitation.prcp
 
     session.close()
 
